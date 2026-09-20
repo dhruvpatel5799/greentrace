@@ -1,0 +1,27 @@
+# secrets & keys
+greentrace-backend-key.json
+.env
+.env.local
+
+# node
+node_modules/
+api/node_modules/
+web/node_modules/
+npm-debug.log
+
+# python
+earth-engine-service/venv/
+__pycache__/
+*.pyc
+
+# build output
+web/.next/
+web/out/
+api/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
