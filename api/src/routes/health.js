@@ -12,7 +12,17 @@ const router = Router();
  * @returns {{ status: string, timestamp: string }}
  */
 router.get('/', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const missingEnv = env.getMissingEnv();
+
+  if (missingEnv.length > 0) {
+    return res.status(503).json({
+      status: 'not_ready',
+      timestamp: new Date().toISOString(),
+      missing: missingEnv,
+    });
+  }
+
+  return res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 /**
@@ -23,6 +33,16 @@ router.get('/', (_req, res) => {
  */
 router.get('/gemini', async (_req, res, next) => {
   try {
+    const missingEnv = env.getMissingEnv();
+
+    if (!genAI || missingEnv.length > 0) {
+      return res.status(503).json({
+        status: 'not_ready',
+        missing: missingEnv,
+        message: 'Gemini is unavailable because required environment variables are missing.',
+      });
+    }
+
     const response = await genAI.models.generateContent({
       model: env.geminiModel,
       contents: 'Reply with exactly: GreenTrace online',
@@ -32,9 +52,9 @@ router.get('/gemini', async (_req, res, next) => {
       ?? response?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('')
       ?? '';
 
-    res.json({ status: 'ok', response: text.trim() });
+    return res.json({ status: 'ok', response: text.trim() });
   } catch (err) {
-    next(err);
+    return next(err);
   }
 });
 

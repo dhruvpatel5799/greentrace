@@ -1,12 +1,17 @@
 'use strict';
 
 const path = require('path');
+
 require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 
 const keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
 if (keyFile && !path.isAbsolute(keyFile)) {
-  process.env.GOOGLE_APPLICATION_CREDENTIALS = path.resolve(__dirname, '../../../', keyFile);
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = path.resolve(
+    __dirname,
+    '../../../',
+    keyFile,
+  );
 }
 
 const required = [
@@ -18,13 +23,22 @@ const required = [
   'GEMINI_MODEL',
 ];
 
-for (const key of required) {
-  if (!process.env[key]) {
-    throw new Error(`Missing required environment variable: ${key}`);
+function getMissingEnv() {
+  return required.filter((key) => !process.env[key]);
+}
+
+function assertRequiredEnv() {
+  const missing = getMissingEnv();
+
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variable(s): ${missing.join(', ')}`);
   }
 }
 
 module.exports = {
+  required,
+  getMissingEnv,
+  assertRequiredEnv,
   projectId: process.env.GCP_PROJECT_ID,
   region: process.env.GCP_REGION,
   keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
