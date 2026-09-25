@@ -8,6 +8,8 @@ node_modules/
 api/node_modules/
 web/node_modules/
 npm-debug.log
+coverage/
+api/coverage/
 
 # python
 earth-engine-service/venv/
@@ -18,6 +20,11 @@ __pycache__/
 web/.next/
 web/out/
 api/dist/
+
+# local data artifacts
+*.csv
+*.txt
+!README.md
 
 # OS
 .DS_Store
