@@ -16,6 +16,7 @@ if (missing.length > 0) {
     secretManager: null,
     documentAI: null,
     genAI: null,
+    geminiModel: null,
     missing,
   };
 } else {
@@ -29,5 +30,34 @@ if (missing.length > 0) {
     location: env.region,
   });
 
-  module.exports = { bigquery, storage, secretManager, documentAI, genAI, missing: [] };
+  const geminiModel = {
+    generateContent: async (request) => {
+      const result = await genAI.models.generateContent({
+        model: env.geminiModel,
+        contents: Array.isArray(request?.contents)
+          ? request.contents
+          : [request?.contents ?? ''],
+      });
+
+      return {
+        response: {
+          candidates: [{
+            content: {
+              parts: [{ text: result?.text ?? '' }],
+            },
+          }],
+        },
+      };
+    },
+  };
+
+  module.exports = {
+    bigquery,
+    storage,
+    secretManager,
+    documentAI,
+    genAI,
+    geminiModel,
+    missing: [],
+  };
 }

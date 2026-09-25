@@ -1,10 +1,11 @@
 'use strict';
 
 const { Router } = require('express');
-const { genAI } = require('../config/gcpClients');
+const gcpClients = require('../config/gcpClients');
 const env = require('../config/env');
 
 const router = Router();
+const geminiClient = gcpClients.geminiModel || gcpClients.genAI;
 
 /**
  * GET /health
@@ -35,7 +36,7 @@ router.get('/gemini', async (_req, res, next) => {
   try {
     const missingEnv = env.getMissingEnv();
 
-    if (!genAI || missingEnv.length > 0) {
+    if (!geminiClient || missingEnv.length > 0) {
       return res.status(503).json({
         status: 'not_ready',
         missing: missingEnv,
@@ -43,13 +44,28 @@ router.get('/gemini', async (_req, res, next) => {
       });
     }
 
-    const response = await genAI.models.generateContent({
-      model: env.geminiModel,
-      contents: 'Reply with exactly: GreenTrace online',
-    });
+    let response;
+
+    if (typeof geminiClient.generateContent === 'function') {
+      response = await geminiClient.generateContent({
+        contents: [{ role: 'user', parts: [{ text: 'Reply with exactly: GreenTrace online' }] }],
+      });
+      response = response.response ?? response;
+    } else if (geminiClient.models && typeof geminiClient.models.generateContent === 'function') {
+      response = await geminiClient.models.generateContent({
+        model: env.geminiModel,
+        contents: 'Reply with exactly: GreenTrace online',
+      });
+    } else {
+      return res.status(503).json({
+        status: 'not_ready',
+        message: 'Gemini client is not configured.',
+      });
+    }
 
     const text = response?.text
       ?? response?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('')
+      ?? response?.response?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('')
       ?? '';
 
     return res.json({ status: 'ok', response: text.trim() });
