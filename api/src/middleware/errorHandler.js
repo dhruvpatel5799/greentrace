@@ -9,9 +9,15 @@
  * @param {import('express').NextFunction} next
  */
 function errorHandler(err, req, res, next) { // eslint-disable-line no-unused-vars
-  const status  = err.status || err.statusCode || 500;
-  const code    = err.code   || 'INTERNAL_ERROR';
-  const message = err.expose ? err.message : 'An unexpected error occurred';
+  let status = err.status || err.statusCode || 500;
+  let code = err.code || 'INTERNAL_ERROR';
+  let message = err.expose ? err.message : 'An unexpected error occurred';
+
+  if (err && (err.code === 'LIMIT_FILE_SIZE' || err.name === 'MulterError')) {
+    status = 400;
+    code = 'INVALID_FILE';
+    message = err.message || 'CSV file exceeds 5MB limit.';
+  }
 
   console.error(`[${code}] ${err.message}`, { stack: err.stack });
 

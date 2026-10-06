@@ -7,6 +7,7 @@ const morgan = require('morgan');
 const env = require('./config/env');
 const errorHandler = require('./middleware/errorHandler');
 const healthRouter = require('./routes/health');
+const carbonAuditorRoutes = require('./modules/carbon-auditor/procurementRoutes');
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.use(express.json());
 
 // --- Routes ---
 app.use('/health', healthRouter);
+app.use('/carbon-auditor', carbonAuditorRoutes);
 
 // --- Central error handler (must be last) ---
 app.use(errorHandler);

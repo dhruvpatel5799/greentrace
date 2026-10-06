@@ -5,7 +5,10 @@ const gcpClients = require('../config/gcpClients');
 const env = require('../config/env');
 
 const router = Router();
-const geminiClient = gcpClients.geminiModel || gcpClients.genAI;
+
+function getGeminiClient() {
+  return gcpClients.geminiModel || gcpClients.genAI || null;
+}
 
 /**
  * GET /health
@@ -35,6 +38,7 @@ router.get('/', (_req, res) => {
 router.get('/gemini', async (_req, res, next) => {
   try {
     const missingEnv = env.getMissingEnv();
+    const geminiClient = getGeminiClient();
 
     if (!geminiClient || missingEnv.length > 0) {
       return res.status(503).json({
@@ -50,7 +54,7 @@ router.get('/gemini', async (_req, res, next) => {
       response = await geminiClient.generateContent({
         contents: [{ role: 'user', parts: [{ text: 'Reply with exactly: GreenTrace online' }] }],
       });
-      response = response.response ?? response;
+      response = response?.response ?? response;
     } else if (geminiClient.models && typeof geminiClient.models.generateContent === 'function') {
       response = await geminiClient.models.generateContent({
         model: env.geminiModel,
