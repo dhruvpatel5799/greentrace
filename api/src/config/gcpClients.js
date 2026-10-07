@@ -4,7 +4,7 @@ const { BigQuery } = require('@google-cloud/bigquery');
 const { Storage } = require('@google-cloud/storage');
 const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
 const { DocumentProcessorServiceClient } = require('@google-cloud/documentai').v1;
-const { GoogleGenAI } = require('@google/genai');
+const { VertexAI } = require('@google-cloud/vertexai');
 const env = require('./env');
 
 const missing = env.getMissingEnv();
@@ -15,7 +15,6 @@ if (missing.length > 0) {
     storage: null,
     secretManager: null,
     documentAI: null,
-    genAI: null,
     geminiModel: null,
     missing,
   };
@@ -24,39 +23,14 @@ if (missing.length > 0) {
   const storage = new Storage({ projectId: env.projectId });
   const secretManager = new SecretManagerServiceClient();
   const documentAI = new DocumentProcessorServiceClient();
-  const genAI = new GoogleGenAI({
-    vertexai: true,
-    project: env.projectId,
-    location: env.region,
-  });
-
-  const geminiModel = {
-    generateContent: async (request) => {
-      const result = await genAI.models.generateContent({
-        model: env.geminiModel,
-        contents: Array.isArray(request?.contents)
-          ? request.contents
-          : [request?.contents ?? ''],
-      });
-
-      return {
-        response: {
-          candidates: [{
-            content: {
-              parts: [{ text: result?.text ?? '' }],
-            },
-          }],
-        },
-      };
-    },
-  };
+  const vertexAI = new VertexAI({ project: env.projectId, location: env.region });
+  const geminiModel = vertexAI.getGenerativeModel({ model: env.geminiModel });
 
   module.exports = {
     bigquery,
     storage,
     secretManager,
     documentAI,
-    genAI,
     geminiModel,
     missing: [],
   };

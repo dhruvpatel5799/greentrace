@@ -23,6 +23,14 @@ const required = [
   'GEMINI_MODEL',
 ];
 
+const cloudSqlOptional = [
+  'CLOUDSQL_HOST',
+  'CLOUDSQL_DB_NAME',
+  'CLOUDSQL_DB_USER',
+  'CLOUDSQL_DB_PASSWORD',
+  'DOCUMENT_PROCESSOR_ID',
+];
+
 function getMissingEnv() {
   return required.filter((key) => !process.env[key]);
 }
@@ -37,13 +45,45 @@ function assertRequiredEnv() {
 
 module.exports = {
   required,
+  cloudSqlOptional,
   getMissingEnv,
   assertRequiredEnv,
-  projectId: process.env.GCP_PROJECT_ID,
-  region: process.env.GCP_REGION,
-  keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-  bucket: process.env.STORAGE_BUCKET,
-  bqDataset: process.env.BQ_DATASET,
-  geminiModel: process.env.GEMINI_MODEL,
-  port: parseInt(process.env.PORT || '8080', 10),
+  get projectId() {
+    return process.env.GCP_PROJECT_ID;
+  },
+  get region() {
+    return process.env.GCP_REGION;
+  },
+  get keyFile() {
+    return process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  },
+  get bucket() {
+    return process.env.STORAGE_BUCKET;
+  },
+  get bqDataset() {
+    return process.env.BQ_DATASET;
+  },
+  get geminiModel() {
+    return process.env.GEMINI_MODEL;
+  },
+  get cloudSqlHost() {
+    return process.env.CLOUDSQL_HOST;
+  },
+  get cloudSqlDatabase() {
+    return process.env.CLOUDSQL_DB_NAME;
+  },
+  get cloudSqlUser() {
+    return process.env.CLOUDSQL_DB_USER;
+  },
+  get cloudSqlPassword() {
+    // Security note: in deploy, this value should come from Secret Manager rather than
+    // a process.env variable so the DB password is not exposed through plain env files.
+    return process.env.CLOUDSQL_DB_PASSWORD;
+  },
+  get documentProcessorId() {
+    return process.env.DOCUMENT_PROCESSOR_ID;
+  },
+  get port() {
+    return parseInt(process.env.PORT || '8080', 10);
+  },
 };
