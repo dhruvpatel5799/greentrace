@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const multer = require('multer');
+const AppError = require('../../middleware/AppError');
 const { readProcurementCsv } = require('./procurementCsvValidator');
 const cloudSqlService = require('../../services/cloudSqlProcurementService');
 
@@ -20,16 +21,6 @@ const upload = multer({
   },
 });
 
-class AppError extends Error {
-  constructor(message, status = 400, code = 'BAD_REQUEST') {
-    super(message);
-    this.name = 'AppError';
-    this.status = status;
-    this.code = code;
-    this.expose = true;
-  }
-}
-
 /**
  * Accepts a procurement CSV upload, validates it, and persists normalized line items.
  * @param {import('express').Request} req - HTTP request containing the uploaded file.
@@ -41,10 +32,6 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) {
       throw new AppError('Only CSV files are allowed for upload.', 400, 'INVALID_FILE');
-    }
-
-    if (req.file.size > 5 * 1024 * 1024) {
-      throw new AppError('CSV file exceeds 5MB limit.', 400, 'INVALID_FILE');
     }
 
     const csvString = req.file.buffer.toString('utf8');

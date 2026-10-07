@@ -1,6 +1,6 @@
 'use strict';
 
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 const env = require('../config/env');
 
 let pool;
@@ -18,14 +18,14 @@ function getPool() {
   }
 
   if (!pool) {
-    pool = mysql.createPool({
+    pool = new Pool({
       host: env.cloudSqlHost,
       user: env.cloudSqlUser,
       password: env.cloudSqlPassword,
       database: env.cloudSqlDatabase,
-      waitForConnections: true,
-      connectionLimit: 5,
-      queueLimit: 0,
+      port: 5432,
+      max: 5,
+      idleTimeoutMillis: 30000,
     });
   }
 
@@ -39,17 +39,25 @@ async function ensureProcurementLineItemsTable() {
     return false;
   }
 
-  await connectionPool.execute(`
+  await connectionPool.query(`
     CREATE TABLE IF NOT EXISTS procurement_line_items (
-      id INT AUTO_INCREMENT PRIMARY KEY,
+      id SERIAL PRIMARY KEY,
       vendor_name VARCHAR(255) NOT NULL,
       description TEXT NOT NULL,
-      amount_usd DECIMAL(18,2) NOT NULL,
-      naics_code VARCHAR(20) NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_vendor_name (vendor_name),
-      INDEX idx_naics_code (naics_code)
+      amount_usd NUMERIC(18,2),
+      naics_code VARCHAR(20),
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )
+  `);
+
+  await connectionPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_procurement_vendor_name
+    ON procurement_line_items (vendor_name)
+  `);
+
+  await connectionPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_procurement_naics_code
+    ON procurement_line_items (naics_code)
   `);
 
   return true;
@@ -59,7 +67,9 @@ async function saveProcurementLineItems(rows = []) {
   const normalizedRows = (rows || []).map((row) => ({
     vendor_name: String(row.vendor_name || '').trim(),
     description: String(row.description || '').trim(),
-    amount_usd: Number(row.amount_usd ?? 0),
+    amount_usd: row.amount_usd === null || row.amount_usd === undefined || row.amount_usd === ''
+      ? null
+      : Number(row.amount_usd),
     naics_code: row.naics_code ? String(row.naics_code).trim() : null,
   }));
 
@@ -77,18 +87,20 @@ async function saveProcurementLineItems(rows = []) {
 
   const sql = `
     INSERT INTO procurement_line_items (vendor_name, description, amount_usd, naics_code)
-    VALUES ?
+    VALUES ($1, $2, $3, $4)
   `;
 
-  const values = normalizedRows.map((row) => [
-    row.vendor_name,
-    row.description,
-    row.amount_usd,
-    row.naics_code,
-  ]);
+  const results = await Promise.all(
+    normalizedRows.map((row) => connectionPool.query(sql, [
+      row.vendor_name,
+      row.description,
+      row.amount_usd,
+      row.naics_code,
+    ])),
+  );
 
-  const [result] = await connectionPool.query(sql, [values]);
-  return { inserted: result.affectedRows || normalizedRows.length };
+  const inserted = results.reduce((total, result) => total + Number(result?.rowCount || 1), 0);
+  return { inserted };
 }
 
 module.exports = {

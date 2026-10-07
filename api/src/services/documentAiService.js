@@ -1,6 +1,8 @@
 'use strict';
 
+const AppError = require('../middleware/AppError');
 const gcpClients = require('../config/gcpClients');
+const env = require('../config/env');
 
 /**
  * Parses a single text block into a procurement line-item structure.
@@ -50,11 +52,25 @@ async function parseProcurementDocument(buffer, mimeType = 'application/pdf') {
   const client = gcpClients.documentAI;
 
   if (!client || typeof client.processDocument !== 'function') {
-    return [];
+    throw new AppError(
+      'Document processor is not configured. Set DOCUMENT_PROCESSOR_ID in the environment.',
+      500,
+      'DOCUMENT_PROCESSOR_NOT_CONFIGURED',
+    );
+  }
+
+  const processorId = env.documentProcessorId;
+
+  if (!processorId) {
+    throw new AppError(
+      'Document processor is not configured. Set DOCUMENT_PROCESSOR_ID in the environment.',
+      500,
+      'DOCUMENT_PROCESSOR_NOT_CONFIGURED',
+    );
   }
 
   const result = await client.processDocument({
-    name: process.env.DOCUMENT_PROCESSOR_ID || 'placeholder-document-processor',
+    name: processorId,
     rawDocument: {
       content: Buffer.isBuffer(buffer) ? buffer.toString('base64') : Buffer.from(String(buffer || ''), 'utf8').toString('base64'),
       mimeType,

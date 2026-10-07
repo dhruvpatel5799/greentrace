@@ -1,11 +1,11 @@
 'use strict';
 
 const request = require('supertest');
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 const env = require('../src/config/env');
 
-jest.mock('mysql2/promise', () => ({
-  createPool: jest.fn(),
+jest.mock('pg', () => ({
+  Pool: jest.fn(),
 }));
 
 jest.mock('../src/config/gcpClients', () => ({
@@ -30,6 +30,7 @@ const originalEnv = {
   STORAGE_BUCKET: process.env.STORAGE_BUCKET,
   BQ_DATASET: process.env.BQ_DATASET,
   GEMINI_MODEL: process.env.GEMINI_MODEL,
+  DOCUMENT_PROCESSOR_ID: process.env.DOCUMENT_PROCESSOR_ID,
   CLOUDSQL_HOST: process.env.CLOUDSQL_HOST,
   CLOUDSQL_DB_NAME: process.env.CLOUDSQL_DB_NAME,
   CLOUDSQL_DB_USER: process.env.CLOUDSQL_DB_USER,
@@ -53,14 +54,14 @@ beforeEach(() => {
   process.env.STORAGE_BUCKET = 'demo-bucket';
   process.env.BQ_DATASET = 'greentrace_data';
   process.env.GEMINI_MODEL = 'gemini-1.5-pro';
+  process.env.DOCUMENT_PROCESSOR_ID = 'demo-processor';
   process.env.CLOUDSQL_HOST = 'localhost';
   process.env.CLOUDSQL_DB_NAME = 'greentrace';
   process.env.CLOUDSQL_DB_USER = 'greentrace_user';
   process.env.CLOUDSQL_DB_PASSWORD = 'secret';
-  mysql.createPool.mockReturnValue({
-    execute: jest.fn().mockResolvedValue([]),
-    query: jest.fn().mockResolvedValue([{ affectedRows: 2 }]),
-  });
+  Pool.mockImplementation(() => ({
+    query: jest.fn().mockResolvedValue({ rowCount: 2 }),
+  }));
 });
 
 afterEach(() => {
@@ -218,15 +219,35 @@ describe('Document AI service', () => {
     }));
   });
 
-  it('returns an empty array when the Document AI client is not configured', async () => {
+  it('throws a typed error when the Document AI client is not configured', async () => {
     const { documentAI } = require('../src/config/gcpClients');
     const original = documentAI.processDocument;
     documentAI.processDocument = undefined;
 
-    const result = await parseProcurementDocument(Buffer.from('abc'), 'application/pdf');
+    await expect(parseProcurementDocument(Buffer.from('abc'), 'application/pdf'))
+      .rejects.toMatchObject({
+        code: 'DOCUMENT_PROCESSOR_NOT_CONFIGURED',
+        status: 500,
+      });
 
-    expect(result).toEqual([]);
     documentAI.processDocument = original;
+  });
+
+  it('throws a typed error when DOCUMENT_PROCESSOR_ID is missing', async () => {
+    const previous = process.env.DOCUMENT_PROCESSOR_ID;
+    delete process.env.DOCUMENT_PROCESSOR_ID;
+
+    await expect(parseProcurementDocument(Buffer.from('abc'), 'application/pdf'))
+      .rejects.toMatchObject({
+        code: 'DOCUMENT_PROCESSOR_NOT_CONFIGURED',
+        status: 500,
+      });
+
+    if (previous === undefined) {
+      delete process.env.DOCUMENT_PROCESSOR_ID;
+    } else {
+      process.env.DOCUMENT_PROCESSOR_ID = previous;
+    }
   });
 });
 
@@ -313,7 +334,7 @@ describe('environment validation', () => {
     expect(env.cloudSqlDatabase).toBe('greentrace');
     expect(env.cloudSqlUser).toBe('greentrace_user');
     expect(env.cloudSqlPassword).toBe('secret');
-    expect(env.documentProcessorId).toBeUndefined();
+    expect(env.documentProcessorId).toBe('demo-processor');
     expect(env.port).toBe(9090);
 
     delete process.env.PORT;
@@ -337,17 +358,15 @@ describe('environment validation', () => {
 describe('Cloud SQL procurement service', () => {
   it('creates the table and inserts rows when Cloud SQL config is present', async () => {
     const mockPool = {
-      execute: jest.fn().mockResolvedValue([]),
-      query: jest.fn().mockResolvedValue([{ affectedRows: 1 }]),
+      query: jest.fn().mockResolvedValue({ rowCount: 1 }),
     };
-    mysql.createPool.mockReturnValue(mockPool);
+    Pool.mockReturnValue(mockPool);
 
     const result = await cloudSqlService.saveProcurementLineItems([
       { vendor_name: 'Acme', description: 'Desk chairs', amount_usd: 100.5, naics_code: '423110' },
     ]);
 
     expect(result.inserted).toBe(1);
-    expect(mockPool.execute).toHaveBeenCalled();
     expect(mockPool.query).toHaveBeenCalled();
     expect(cloudSqlService.getPool()).toBeDefined();
   });
@@ -445,22 +464,6 @@ describe('GET /health/gemini', () => {
     expect(res.body.response).toBe('GreenTrace online');
   });
 
-  it('uses the Gemini models API path when generateContent is not defined directly', async () => {
-    const gcpClients = require('../src/config/gcpClients');
-    gcpClients.geminiModel = {
-      models: {
-        generateContent: jest.fn().mockResolvedValue({
-          text: 'GreenTrace online',
-        }),
-      },
-    };
-
-    const res = await request(app).get('/health/gemini');
-
-    expect(res.status).toBe(200);
-    expect(res.body.response).toBe('GreenTrace online');
-  });
-
   it('returns 503 when the Gemini client is missing from the runtime config', async () => {
     const gcpClients = require('../src/config/gcpClients');
     gcpClients.geminiModel = null;
@@ -480,5 +483,72 @@ describe('GET /health/gemini', () => {
     const res = await request(app).get('/health/gemini');
     expect(res.status).toBe(500);
     expect(res.body.error.code).toBe('INTERNAL_ERROR');
+  });
+});
+
+describe('coverage edge cases', () => {
+  it('uses AppError defaults and custom codes when no status is supplied', () => {
+    const AppError = require('../src/middleware/AppError');
+
+    const defaultError = new AppError('Default');
+    const customError = new AppError('Custom message', 418, 'TEA_TIME');
+
+    expect(defaultError.status).toBe(400);
+    expect(defaultError.code).toBe('BAD_REQUEST');
+    expect(customError.status).toBe(418);
+    expect(customError.code).toBe('TEA_TIME');
+    expect(customError.expose).toBe(true);
+  });
+
+  it('hides sensitive error messages when an error is not intentionally exposed', () => {
+    const errorHandler = require('../src/middleware/errorHandler');
+    const err = new Error('secret failure');
+    err.expose = false;
+
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+
+    errorHandler(err, {}, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred',
+      },
+    });
+  });
+
+  it('normalizes nullish Cloud SQL values before insertion', async () => {
+    const mockPool = {
+      query: jest.fn().mockResolvedValue({ rowCount: 1 }),
+    };
+    Pool.mockReturnValue(mockPool);
+
+    const result = await cloudSqlService.saveProcurementLineItems([
+      {
+        vendor_name: '  Acme   ',
+        description: '  Office chairs  ',
+        amount_usd: undefined,
+        naics_code: '',
+      },
+    ]);
+
+    expect(result.inserted).toBe(1);
+    expect(mockPool.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO procurement_line_items'),
+      ['Acme', 'Office chairs', null, null],
+    );
+  });
+
+  it('returns empty-row validation errors for blank or malformed CSV payloads', () => {
+    const blank = readProcurementCsv('   \n\n');
+    const malformed = readProcurementCsv('vendor_name,description,amount_usd\n"Acme","Desk",');
+
+    expect(blank.errors).toEqual(['CSV file is empty.']);
+    expect(malformed.rows[0].amount_usd).toBeNull();
+    expect(malformed.rows[0].vendor_name).toBe('Acme');
   });
 });

@@ -7,7 +7,7 @@ const env = require('../config/env');
 const router = Router();
 
 function getGeminiClient() {
-  return gcpClients.geminiModel || gcpClients.genAI || null;
+  return gcpClients.geminiModel || null;
 }
 
 /**
@@ -55,11 +55,6 @@ router.get('/gemini', async (_req, res, next) => {
         contents: [{ role: 'user', parts: [{ text: 'Reply with exactly: GreenTrace online' }] }],
       });
       response = response?.response ?? response;
-    } else if (geminiClient.models && typeof geminiClient.models.generateContent === 'function') {
-      response = await geminiClient.models.generateContent({
-        model: env.geminiModel,
-        contents: 'Reply with exactly: GreenTrace online',
-      });
     } else {
       return res.status(503).json({
         status: 'not_ready',

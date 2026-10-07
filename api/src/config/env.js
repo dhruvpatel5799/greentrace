@@ -76,6 +76,8 @@ module.exports = {
     return process.env.CLOUDSQL_DB_USER;
   },
   get cloudSqlPassword() {
+    // Security note: in deploy, this value should come from Secret Manager rather than
+    // a process.env variable so the DB password is not exposed through plain env files.
     return process.env.CLOUDSQL_DB_PASSWORD;
   },
   get documentProcessorId() {
